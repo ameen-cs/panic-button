@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🚨 Community Panic Button</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+      background: #f0f0f0;
+    }
+    input, select, button {
+      padding: 12px;
+      margin: 10px;
+      font-size: 18px;
+      width: 90%;
+      max-width: 400px;
+    }
+    #panicBtn {
+      background: red;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-weight: bold;
+      padding: 20px;
+      font-size: 24px;
+    }
+    #alerts {
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
+      padding: 15px;
+      margin-top: 20px;
+      border-radius: 8px;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <h1>🚨 Community Panic Button</h1>
+  
+  <div id="setup" style="display:none;">
+    <input type="text" id="address" placeholder="Your House Address" />
+    
+    <select id="area">
+      <option value="">-- Select Your Area --</option>
+      <option value="Stanger Manor">Stanger Manor</option>
+      <option value="Oceanview">Oceanview</option>
+    </select>
+    
+    <button onclick="saveInfo()">Save & Enable Alerts</button>
+  </div>
+
+  <div id="main" style="display:none;">
+    <p>✅ Ready! Tap below in an emergency.</p>
+    <button id="panicBtn" onclick="triggerPanic()">🚨 PANIC BUTTON 🚨</button>
+    
+    <div id="alerts"></div>
+  </div>
+
+  <script>
+    // Check if user has registered
+    const address = localStorage.getItem('panic_address');
+    const area = localStorage.getItem('panic_area');
+
+    if (address && area) {
+      document.getElementById('main').style.display = 'block';
+      requestNotificationPermission();
+    } else {
+      document.getElementById('setup').style.display = 'block';
+    }
+
+    let isRegistering = false;
+    async function saveInfo() {
+      if (isRegistering) return;
+      isRegistering = true;
+
+      const addr = document.getElementById('address').value.trim();
+      const ar = document.getElementById('area').value;
+
+      if (!addr || !ar) {
+        alert("Please enter your address and select an area.");
+        isRegistering = false;
+        return;
+      }
+
+      try {
+        const response = await fetch('/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: addr, area: ar })
+        });
+
+        // Handle non-JSON or server errors gracefully
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("Server returned non-OK response:", errorText);
+          throw new Error("Server error");
+        }
+
+        const data = await response.json();
+        if (data.error) {
+          alert("Registration failed: " + data.error);
+        } else {
+          localStorage.setItem('panic_address', addr);
+          localStorage.setItem('panic_area', ar);
+          document.getElementById('setup').style.display = 'none';
+          document.getElementById('main').style.display = 'block';
+          requestNotificationPermission();
+        }
+      } catch (err) {
+        console.error("Registration failed:", err);
+        alert("Failed to register. Please try again.");
+      } finally {
+        isRegistering = false;
+      }
+    }
+
+    function requestNotificationPermission() {
+      if (window.Notification && Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+    }
+
+    let isPanicking = false;
+    async function triggerPanic() {
+      if (isPanicking) return;
+      if (!confirm("❗ Are you sure? This will alert everyone in your community!")) return;
+
+      isPanicking = true;
+      try {
+        const response = await fetch('/panic', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            address: localStorage.getItem('panic_address'),
+            area: localStorage.getItem('panic_area')
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("Panic request failed:", errorText);
+          throw new Error("Alert failed");
+        }
+
+        const result = await response.json();
+        alert(result.status || "Alert sent!");
+      } catch (err) {
+        console.error("Panic error:", err);
+        alert("Failed to send alert. Please try again.");
+      } finally {
+        isPanicking = false;
+      }
+    }
+
+    // Track seen alerts to avoid duplicate notifications
+    let seenAlerts = new Set();
+
+    setInterval(async () => {
+      try {
+        const res = await fetch('/alerts');
+        if (!res.ok) {
+          console.warn("Could not fetch alerts:", await res.text());
+          return;
+        }
+        const alerts = await res.json();
+        const div = document.getElementById('alerts');
+
+        if (alerts.length > 0) {
+          div.innerHTML = '<h3>🚨 Recent Alerts:</h3>' + alerts.map(a => `<p>${a}</p>`).join('');
+          div.style.display = 'block';
+
+          alerts.forEach(alert => {
+            if (!seenAlerts.has(alert)) {
+              seenAlerts.add(alert);
+              if (window.Notification && Notification.permission === "granted") {
+                new Notification("🚨 Community Alert!", {
+                  body: alert,
+                  icon: "https://cdn-icons-png.flaticon.com/512/2789/2789999.png" // ✅ Fixed: no extra spaces
+                });
+              }
+            }
+          });
+
+          // Keep memory usage low
+          if (seenAlerts.size > 10) {
+            const oldest = [...seenAlerts].slice(0, seenAlerts.size - 10);
+            oldest.forEach(a => seenAlerts.delete(a));
+          }
+        } else {
+          div.style.display = 'none';
+        }
+      } catch (e) {
+        console.log("Could not fetch alerts:", e);
+      }
+    }, 3000);
+  </script>
+</body>
+</html>

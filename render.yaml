@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: panic-button
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    envVars:
+      - key: PORT
+        value: 8000
+    disk:
+      mountPath: /opt/render/project/src
+      name: panic-db
+      sizeGB: 1
