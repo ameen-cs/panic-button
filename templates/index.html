@@ -1,8 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<link rel="manifest" href="/static/manifest.json">
-<meta name="theme-color" content="#ff0000">
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+  <script src="/static/firebase-config.js"></script>
+
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#ff0000">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>🚨 Community Panic Button</title>
@@ -68,7 +73,7 @@
 
     if (address && area) {
       document.getElementById('main').style.display = 'block';
-      requestNotificationPermission();
+      initPushNotifications(area);
     } else {
       document.getElementById('setup').style.display = 'block';
     }
@@ -94,11 +99,10 @@
           body: JSON.stringify({ address: addr, area: ar })
         });
 
-        // Handle non-JSON or server errors gracefully
         if (!response.ok) {
           const errorText = await response.text();
-          console.error("Server returned non-OK response:", errorText);
-          throw new Error("Server error");
+          console.error("Server error:", errorText);
+          throw new Error("Registration failed");
         }
 
         const data = await response.json();
@@ -109,7 +113,7 @@
           localStorage.setItem('panic_area', ar);
           document.getElementById('setup').style.display = 'none';
           document.getElementById('main').style.display = 'block';
-          requestNotificationPermission();
+          initPushNotifications(ar);
         }
       } catch (err) {
         console.error("Registration failed:", err);
@@ -122,6 +126,35 @@
     function requestNotificationPermission() {
       if (window.Notification && Notification.permission === "default") {
         Notification.requestPermission();
+      }
+    }
+
+    async function requestPushPermission(area) {
+      try {
+        const messaging = firebase.messaging();
+        // 🔁 Replace "YOUR_VAPID_KEY" with your Firebase Web Push certificate
+        const token = await messaging.getToken({ vapidKey: "uOYm2ESVi1ABJ1_x4uOk2C30ZHLGwuEG2M4Vw0QTY9U" });
+        
+        await fetch('/save-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, area })
+        });
+      } catch (err) {
+        console.log('Push permission denied:', err);
+      }
+    }
+
+    async function initPushNotifications(area) {
+      requestNotificationPermission(); // Fallback for older browsers
+
+      if ('serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.register('/static/firebase-messaging-sw.js');
+          await requestPushPermission(area);
+        } catch (err) {
+          console.log('Service worker registration failed:', err);
+        }
       }
     }
 
@@ -143,7 +176,7 @@
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error("Panic request failed:", errorText);
+          console.error("Panic failed:", errorText);
           throw new Error("Alert failed");
         }
 
@@ -157,16 +190,12 @@
       }
     }
 
-    // Track seen alerts to avoid duplicate notifications
+    // Polling for fallback (in case push fails)
     let seenAlerts = new Set();
-
     setInterval(async () => {
       try {
         const res = await fetch('/alerts');
-        if (!res.ok) {
-          console.warn("Could not fetch alerts:", await res.text());
-          return;
-        }
+        if (!res.ok) return;
         const alerts = await res.json();
         const div = document.getElementById('alerts');
 
@@ -180,13 +209,12 @@
               if (window.Notification && Notification.permission === "granted") {
                 new Notification("🚨 Community Alert!", {
                   body: alert,
-                  icon: "https://cdn-icons-png.flaticon.com/512/2789/2789999.png" // ✅ Fixed: no extra spaces
+                  icon: "https://cdn-icons-png.flaticon.com/512/2789/2789999.png"
                 });
               }
             }
           });
 
-          // Keep memory usage low
           if (seenAlerts.size > 10) {
             const oldest = [...seenAlerts].slice(0, seenAlerts.size - 10);
             oldest.forEach(a => seenAlerts.delete(a));
@@ -195,7 +223,7 @@
           div.style.display = 'none';
         }
       } catch (e) {
-        console.log("Could not fetch alerts:", e);
+        console.log("Polling error:", e);
       }
     }, 3000);
   </script>
