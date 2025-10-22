@@ -1,0 +1,21 @@
+{
+    "name": "Community Panic Button",
+    "short_name": "Panic Button",
+    "description": "Alert your neighborhood in an emergency",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#f0f0f0",
+    "theme_color": "#ff0000",
+    "icons": [
+      {
+        "src": "/static/images.jgeg",
+        "sizes": "192x192",
+        "type": "image/png"
+      },
+      {
+        "src": "/static/images.jgeg",
+        "sizes": "512x512",
+        "type": "image/png"
+      }
+    ]
+  }
